@@ -16,7 +16,7 @@ type Cache struct {
 	c         *cmSketch
 	t         int32
 	threshold int32
-	data      map[uint64]*list.Element
+	data      sync.Map
 }
 
 type Options struct {
@@ -48,7 +48,7 @@ func NewCache(size int) *Cache {
 		slru: newS2LRU(data, slru1, slruSize-slru1),
 		bf:   NewBloomFilter(size, 0.01),
 		c:    newCmSketch(int64(size)),
-		data: data,
+		data: sync.Map{},
 	}
 }
 
@@ -116,7 +116,9 @@ func (c *Cache) get(key interface{}) (interface{}, bool) {
 		c.t = 0
 	}
 	keyHash, confilctHash := c.key2Hash(key)
-	val, ok := c.data[keyHash]
+	//val, ok := c.data[keyHash]
+	rawVal, ok := c.data.Load(keyHash)
+	val := rawVal.(*list.Element)
 	if !ok {
 		c.bf.Allow(uint32(keyHash))
 		c.c.Increment(keyHash)
@@ -148,7 +150,9 @@ func (c *Cache) Del(key interface{}) (interface{}, bool) {
 
 func (c *Cache) del(key interface{}) (interface{}, bool) {
 	keyHash, conflictHash := c.key2Hash(key)
-	val, ok := c.data[keyHash]
+	//val, ok := c.data[keyHash]
+	rawVal, ok := c.data.Load(keyHash)
+	val := rawVal.(*list.Element)
 	if !ok {
 		return 0, false
 	}
@@ -157,7 +161,7 @@ func (c *Cache) del(key interface{}) (interface{}, bool) {
 	if conflictHash != 0 && (conflictHash != item.conflict) {
 		return 0, false
 	}
-	delete(c.data, keyHash)
+	c.data.Delete(keyHash)
 	return item.conflict, true
 }
 
